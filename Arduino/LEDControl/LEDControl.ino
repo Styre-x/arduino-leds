@@ -1,5 +1,6 @@
 #define redpin 10
 #define bluepin 9
+#define greenpin 8
 
 int incoming = 0;
 
@@ -24,6 +25,7 @@ void loop() {
       int B = input.substring(secondcomma + 1).toInt();
 
       analogWrite(redpin, R);
+      analogWrite(greenpin, G);
       analogWrite(bluepin, B);
     }
 

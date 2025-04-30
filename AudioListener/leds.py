@@ -5,12 +5,12 @@ import time
 import atexit
 
 arduino = serial.Serial("/dev/ttyACM0", 9600, timeout=1)
-time.sleep(2)
+time.sleep(2) # give time for the arduino to sync
 
 brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # some transistors have a smallest possible pulse width, so setting it too low can lead to non reactive lights. 
 sampleRate = 44100 #bitrate for the sample. 
-duration = 0.1 # seconds to sample from - lower = quick response/higher = smoother response
+duration = 0.025 # seconds to sample from - lower = quick response/higher = smoother response
 # I found a value of 0.025 was good for quicker energetic music but was a bit flashy.
 # A value of 0.1 is where I like to keep it.
 # Values below 0.025 lead to heavy flashing due to little time to average over, but have fun :)
@@ -48,6 +48,8 @@ bassMin = 0
 bassMax = 1
 midMin = 0
 midMax = 1
+highMin = 0
+highMax = 1
 
 try:
     while True:
@@ -56,6 +58,7 @@ try:
 
         bass = getRange(audio, 0, 450)
         mid = getRange(audio, 500, 1200)
+        high = getRange(audio, 3000, 6000)
         #high = 3000 6000
 
         if bass < bassMin:
@@ -67,11 +70,16 @@ try:
             midMin = mid
         if mid > midMax:
             midMax = mid
+        if high < highMin:
+            highMin = high
+        if high > highMax:
+            highMax = high
 
         pwmR = int(normalize(bass, bassMin, bassMax) * brightness)
         pwmB = int(normalize(mid, bassMin, bassMax) * brightness)
+        pwmG = int(normalize(high, highMin, highMax) * brightness)
 
-        sendRGB(pwmR, 0, pwmB)
+        sendRGB(pwmR, pwmB, pwmG)
 except KeyboardInterrupt:
     print("exiting")
 finally:
