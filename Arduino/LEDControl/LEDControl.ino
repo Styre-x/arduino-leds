@@ -1,6 +1,6 @@
 #define redpin 10
 #define bluepin 9
-#define greenpin 8
+#define greenpin 11
 
 int incoming = 0;
 

@@ -1,0 +1,4 @@
+#!/bin/bash
+
+source ~/Documents/arduino-leds/AudioListener/venv/bin/activate
+python3 ~/Documents/arduino-leds/AudioListener/leds.py

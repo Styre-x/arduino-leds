@@ -6,27 +6,69 @@ import atexit
 
 arduino = serial.Serial("/dev/ttyACM0", 9600, timeout=1)
 
-brightness = 0.5 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
+brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # setting it too low can lead to non reactive lights. Higher brightness = more colors.
+
+attack_rate = 0.8    # how quickly it jumps up (0–1)
+decay_rate  = 0.2   # how slowly it falls back
+
 sampleRate = 44100 #bitrate for the sample. 
-duration = 0.025 # seconds to sample from - lower = quick response/higher = smoother response
+duration = 0.01 # seconds to sample from - lower = quick response/higher = smoother response
 # I found a value of 0.025 was good for quicker energetic music but was a bit flashy.
 # A value of 0.1 is where I like to keep it.
 # Values below 0.025 lead to heavy flashing due to little time to average over, but have fun :)
 
+AudioRanges = {
+    "Red": [0, 550],
+    "Green": [6000, 20000],
+    "Blue": [550, 6000]
+}
+
 freqs = np.fft.rfftfreq(int(sampleRate*duration) * 2, 1/sampleRate)
 
-def getRange(audio, lowRange, HighRange):
-    fft = np.abs(np.fft.rfft(audio))
+class normalizer():
+    def __init__(self):
+        self.max = 1
+        self.min = 0
 
-    bass = fft[(freqs >= lowRange) & (freqs <= HighRange)]
+    def normalize(self, input, delta = 1):
+        if input > self.max:
+            self.max = input
+        elif input < self.min:
+            self.min = input
+        return np.clip(delta * (input - self.min) / (self.max - self.min), 0, delta)
 
-    totalBass = np.sum(bass)
+class light():
+    def __init__(self, ledColor):
+        self.ledColor = ledColor
+        self.env = 0
+        self.normalizer = normalizer()
 
-    return totalBass
+    def getPWM(self, audio):
+        raw = self.getRange(audio, AudioRanges[self.ledColor][0], AudioRanges[self.ledColor][0])
+        if raw > self.env:
+            self.env += attack_rate * (raw - self.env)
+        else:
+            self.env += decay_rate  * (raw - self.env)
+        return self.normalizer.normalize(self.env, 255) * brightness
 
-def normalize(val, min, max):
-    return int(np.clip(255* (val - min) / (max - min), 0, 255))
+    def getRange(self, audio, lowRange, HighRange):
+        fft = np.abs(np.fft.rfft(audio))
+
+        freq = fft[(freqs >= lowRange) & (freqs <= HighRange)]
+
+        total = np.sum(freq)
+
+        return total 
+
+    
+
+def sendRGB(R, G, B):
+    R = int(R)
+    G = int(G)
+    B = int(B)
+    data = f"{R},{G},{B}\n"
+    arduino.write(data.encode())
 
 stream = sd.InputStream(
     channels=2,
@@ -35,59 +77,18 @@ stream = sd.InputStream(
 )
 stream.start()
 
-def sendRGB(R, G, B):
-    data = f"{R},{G},{B}\n"
-    arduino.write(data.encode())
-
-def onExit():
-    stream.close()
-
-atexit.register(onExit)
-
-bassMin = 0
-bassMax = 1
-midMin = 0
-midMax = 1
-highMin = 0
-highMax = 1
+RLed = light("Red")
+GLed = light("Green")
+BLed = light("Blue")
 
 try:
     while True:
         audio, _ = stream.read(int(sampleRate * duration))
         audio = audio.flatten()
-        # low 0-450
-        # mid 450 - 1200
-        # high 1200-6000
-        bass = getRange(audio, 0, 2500)
-        mid = getRange(audio, 500, 8000)
-        high = getRange(audio, 3250, 20000)
-        #print(getRange(audio, 500, 510))
-        #high = 3000 6000
 
-        if bass < bassMin:
-            bassMin = bass
-        if bass > bassMax:
-            bassMax = bass
-
-        if mid < midMin:
-            midMin = mid
-        if mid > midMax:
-            midMax = mid
-        if high < highMin:
-            highMin = high
-        if high > highMax:
-            highMax = high
-
-        pwmLow = int(normalize(bass, bassMin, bassMax) * brightness)
-        pwmMid = int(normalize(mid, bassMin, bassMax) * brightness)
-        pwmHigh = int(normalize(high, highMin, highMax) * brightness)
-        # RGB
-        # High: Red
-        # Mid: Green
-        # Low: Blue
-        sendRGB(pwmLow, pwmMid, pwmHigh)
+        sendRGB(RLed.getPWM(audio), GLed.getPWM(audio), BLed.getPWM(audio))
 except KeyboardInterrupt:
-    print("exiting")
+    print("\nexiting")
 finally:
     stream.stop()
     stream.close()
