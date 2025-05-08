@@ -88,8 +88,8 @@ try:
 
         sendRGB(RLed.getPWM(audio), GLed.getPWM(audio), BLed.getPWM(audio))
 except KeyboardInterrupt:
-    print("\nexiting")
-finally:
     stream.stop()
     stream.close()
-    sendRGB(0,0,0) # turn off the lights when the program stops. 
+    sendRGB(0,0,0) # turn off the lights when the program stops.
+finally:
+    print("\nexiting")
