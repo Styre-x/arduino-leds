@@ -6,10 +6,11 @@ int incoming = 0;
 
 
 void setup() {
-  pinMode(10, OUTPUT);
-  pinMode(9, OUTPUT);
+  pinMode(redpin, OUTPUT);
+  pinMode(bluepin, OUTPUT);
+  pinMode(greenpin, OUTPUT);
 
-  Serial.begin(9600);
+  Serial.begin(20000);
 }
 
 void loop() {
