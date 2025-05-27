@@ -5,6 +5,8 @@ import sounddevice as sd
 import numpy as np
 import tkinter as tk
 
+# ChatGPT re-wrote this to add a UI. I don't really like it but it works.
+
 class Normalizer:
     def __init__(self):
         self.max = 1
@@ -63,7 +65,7 @@ class LEDApp(tk.Tk):
         self._recompute_freqs()
 
         # Hardware setup
-        self.arduino = serial.Serial("/dev/ttyACM0", 20000, timeout=1)
+        self.arduino = serial.Serial("/dev/ttyACM0", 15000, timeout=1)
         self.stream  = sd.InputStream(
             channels=2,
             samplerate=self.sample_rate,

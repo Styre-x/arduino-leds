@@ -5,13 +5,13 @@ import sounddevice as sd
 import numpy as np
 import tkinter as tk
 
-arduino = serial.Serial("/dev/ttyACM0", 20000, timeout=1)
+arduino = serial.Serial("/dev/ttyACM0", 15000, timeout=1)
 
 brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # setting it too low can lead to non reactive lights. Higher brightness = more colors.
 
-attack_rate = 0.9    # how quickly it jumps up 0-1
-decay_rate  = 0.6   # how slowly it falls back 1-0
+attack_rate = 1    # how quickly it jumps up 0-1
+decay_rate  = 0.8   # how slowly it falls back 1-0
 
 sampleRate = 44100 #bitrate for the sample. 
 duration = 0.025 # seconds to sample from - lower = quick response/higher = smoother response
@@ -20,23 +20,11 @@ duration = 0.025 # seconds to sample from - lower = quick response/higher = smoo
 # Values below 0.025 lead to heavy flashing due to little time to average over, but have fun :)
 
 All = [0,20000]
-High = [4500, 20000]    #[4000, 20000]raw freq  #[6000, 20000] mostly white with jumps
-Mids = [300, 4500]      #[500, 4000]            #[650, 6500]
-Lows = [0, 300]         #[0, 500]               #[0, 1000]
-MidsHigh = [0, 10000]
+High = [4000, 20000]    #[4000, 20000]raw freq  #[6000, 20000] mostly white with jumps
+Mids = [300, 5000]      #[500, 4000]            #[650, 6500]
+Lows = [0, 550]         #[0, 500]               #[0, 1000]
+MidsHigh = [0, 4500]
 nothing = [0, 10]
-
-AudioRanges = {
-    "Lum": All,
-    "Sat": Lows,
-    "Hue": All
-}
-
-Maxes = {
-    "Lum": 1,
-    "Sat": 1,
-    "Hue": 1
-}
 
 freqs = np.fft.rfftfreq(int(sampleRate*duration) * 2, 1/sampleRate)
 
@@ -61,15 +49,23 @@ class parser():
         self.parseType = parseType
         self.env = 0
         self.normalizer = normalizer()
-        self.maxNorm = Maxes[parseType]
+        self.maxNorm = 1
 
     def getPWM(self, audio):
 
         fft = np.abs(np.fft.rfft(audio))
-
-        freq = fft[(freqs >= AudioRanges[self.parseType][0]) & (freqs <= AudioRanges[self.parseType][1])]
-
-        raw = np.sum(freq)
+        lowFreq = fft[(freqs >= Lows[0]) & (freqs <= Lows[1])]
+        midFreq = fft[(freqs >= Mids[0]) & (freqs <= Mids[1])]
+        highFreq = fft[(freqs >= High[0]) & (freqs <= High[1])]
+        
+        # basically, it takes all frequencies and averages - terrible signal processing - it only reacts to volume changes.
+        # change how much each is multiplied by to change how reactive each frequency is. relative is important! - 201/200/200 will look the same as 2.01/2/2
+        # changing to be too far away from eachother, 1/0.1/1 will be flashy due to spikes in one frequency
+        # I found these pleasant for the music I listen to - different music is a LOT different in what it spikes and what should be emphasised.
+        rawL = np.sum(lowFreq) * 1.2
+        rawM = np.sum(midFreq) * 0.75
+        rawH = np.sum(highFreq) * 1.2
+        raw = rawL + rawM + rawH
 
         if raw > self.env:
             self.env += attack_rate * (raw - self.env)
@@ -78,34 +74,36 @@ class parser():
 
         normalized = self.normalizer.normalize(self.env, self.maxNorm)
 
-        normalized = (normalized + 0.5) % 1
+        normalized = (normalized + 0.5) % 1 # sitting at 0.5 value allows for the 0 state to be white.
 
         return normalized
 
 def sendRGB(R, G, B):
-    R = int(R)
-    G = int(G)
-    B = int(B)
+    R = int(R*255)
+    G = int(G*255)
+    B = int(B*255)
     data = f"{R},{G},{B}\n"
     arduino.write(data.encode())
 
-def hueRGB(p, q, t):
-    t = np.clip(t, 0, 1)
-    if t < 1/6: return p + (q-p)*6*t
-    if t < 1/2: return q
-    if t < 2/3: return p + (q-p)*(2/3-t)*6
-    return p
-
-def sendHSL(Hue, Sat, Lum):
-    if Sat <= 0.1:
-        Sat = 0.1
-    q = Lum * (1 + Sat) if Lum < 0.5 else Lum + Sat - Lum * Sat
-    p = 2 * Lum - q
-    r = hueRGB(p, q, Hue + 1/3)*255
-    g = hueRGB(p, q, Hue)*255
-    b = hueRGB(p, q, Hue - 1/3)*255
-
-    sendRGB(r,g,b)
+def sendHSV(h, s, v):
+    if s == 0.0:
+        return sendRGB(v, v, v)
+    i = int(h * 6.)
+    f = (h * 6) - i
+    p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+    i %= 6
+    if i == 0:
+        return sendRGB(v, t, p)
+    if i == 1:
+        return sendRGB(q, v, p)
+    if i == 2:
+        return sendRGB(p, v, t)
+    if i == 3:
+        return sendRGB(p, q, v)
+    if i == 4:
+        return sendRGB(t, p, v)
+    if i == 5:
+        return sendRGB(v, p, q)
 
 #TODO: this is bad - a mic can be an input
 stream = sd.InputStream(
@@ -123,9 +121,7 @@ try:
    while True:
         audio, _ = stream.read(int(sampleRate * duration))
         audio = audio.flatten()
-        #Hue.getPWM(audio)
-        sendHSL(Hue.getPWM(audio), Sat.getPWM(audio), 0.5) #Lum.getPWM(audio)
-        #sendRGB(RLed.getPWM(audio), GLed.getPWM(audio), BLed.getPWM(audio))
+        sendHSV(Hue.getPWM(audio), 1,1) # lumination and value are set constant to make it brighter.
 except KeyboardInterrupt:
     stream.stop()
     stream.close()

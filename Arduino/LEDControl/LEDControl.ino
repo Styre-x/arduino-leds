@@ -10,7 +10,7 @@ void setup() {
   pinMode(bluepin, OUTPUT);
   pinMode(greenpin, OUTPUT);
 
-  Serial.begin(20000);
+  Serial.begin(15000);
 }
 
 void loop() {
