@@ -19,6 +19,12 @@ duration = 0.025 # seconds to sample from - lower = quick response/higher = smoo
 # A value of 0.1 is where I like to keep it.
 # Values below 0.025 lead to heavy flashing due to little time to average over, but have fun :)
 
+selfNormalize = False # Should it adapt to your music?
+# Set to true and it will automatically set the max for your music.
+# I did not like the reset after a restart so I added this.
+selfMax = 17000 # This should be a good amount above the max given by the normalizer through print(self.max) in input > self.max
+# too high and it will never turn green, too low and it will always be white. I do not like green so it is quite high!
+
 All = [0,20000]
 High = [4000, 20000]    #[4000, 20000]raw freq  #[6000, 20000] mostly white with jumps
 Mids = [300, 5000]      #[500, 4000]            #[650, 6500]
@@ -30,17 +36,25 @@ freqs = np.fft.rfftfreq(int(sampleRate*duration) * 2, 1/sampleRate)
 
 class normalizer():
     def __init__(self):
-        self.max = 1
         self.min = 0
+        if selfNormalize:
+            self.max = 1
+        else:
+            self.max = selfMax
 
     def clear(self):
         self.min = 0
-        self.max = 1
+        if selfNormalize:
+            self.max = 1
+        else:
+            self.max = selfMax
 
     def normalize(self, input, delta = 1):
-        if input > self.max:
-            self.max = input
-        elif input < self.min:
+        if selfNormalize:
+            if input > self.max:
+                self.max = input
+                print(self.max) # here for debug
+        if input < self.min:
             self.min = input
         return np.clip(delta * (input - self.min) / (self.max - self.min), 0, delta)
 
@@ -64,7 +78,7 @@ class parser():
         # I found these pleasant for the music I listen to - different music is a LOT different in what it spikes and what should be emphasised.
         rawL = np.sum(lowFreq) * 1.2
         rawM = np.sum(midFreq) * 0.75
-        rawH = np.sum(highFreq) * 1.2
+        rawH = np.sum(highFreq) * 1.8
         raw = rawL + rawM + rawH
 
         if raw > self.env:
