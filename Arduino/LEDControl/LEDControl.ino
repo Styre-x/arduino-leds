@@ -1,6 +1,6 @@
 #define redpin 10
-#define bluepin 9
-#define greenpin 11
+#define bluepin 11
+#define greenpin 9
 
 int incoming = 0;
 
@@ -10,7 +10,7 @@ void setup() {
   pinMode(bluepin, OUTPUT);
   pinMode(greenpin, OUTPUT);
 
-  Serial.begin(15000);
+  Serial.begin(20000);
 }
 
 void loop() {
