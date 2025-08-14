@@ -1,17 +1,13 @@
 import serial
-import time
-import math
-import atexit
 import sounddevice as sd
 import numpy as np
-import tkinter as tk
 import argparse
 
 arduino = serial.Serial("/dev/ttyACM0", 20000, timeout=1)
 
 brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # setting it too low can lead to non reactive lights. Higher brightness = more colors.
-minBrightness = 0
+minBrightness = 1
 
 attack_rate = 1    # how quickly it jumps up 0-1
 decay_rate  = 0.9   # how slowly it falls back 1-0
@@ -19,7 +15,7 @@ decay_rate  = 0.9   # how slowly it falls back 1-0
 sampleRate = 44100 #bitrate for the sample. 
 duration = 0.025 # seconds to sample from - lower = quick response/higher = smoother response
 # I found a value of 0.025 was good for quicker energetic music but was a bit flashy.
-# A value of 0.1 is where I like to keep it.
+# Changing this can lead to an entire re-calibration of the parser! Changing it by itself is not great without self-normalization and printing the max value to compensate if self-normalization is not wanted.
 # Values below 0.025 lead to heavy flashing due to little time to average over, but have fun :)
 # changing this with selfNormalized set to False will require a re-normalize
 
@@ -28,7 +24,7 @@ selfNormalize = False # Should it adapt to your music?
 # I did not like the reset after a restart so I added this.
 selfMax = 17000 # This should be a good amount above the max given by the normalizer through print(self.max) in input > self.max
 # too high and it will never turn green, too low and it will always be white. I do not like green so it is quite high!
-# recalibrate when changing variable such as frequency multiplication
+# recalibrate when changing variables such as duration or bitrate. Not recalibrating can lead to an inactive light
 
 All = [0,20000]
 High = [4000, 20000]    #[4000, 20000]raw freq  #[6000, 20000] mostly white with jumps
@@ -37,7 +33,7 @@ Lows = [0, 550]         #[0, 500]               #[0, 1000]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--brightness", type=float, help="set light brightness (0-1)")
-parser.add_argument("-l", "--low", type=float, help="set min brightness (0-1)")
+parser.add_argument("-l", "--low", type=float, help="set min brightness (0-1) - relative to brightness: 0.5 will be 0.1 with a brightness of 0.2")
 
 args = parser.parse_args()
 
@@ -45,7 +41,7 @@ if args.brightness is not None:
     brightness = args.brightness
 
 if args.low is not None:
-    minBrightness = args.low
+    minBrightness = args.low * brightness
 
 freqs = np.fft.rfftfreq(int(sampleRate*duration) * 2, 1/sampleRate)
 
@@ -103,12 +99,7 @@ class parser():
 
         return normalized
 
-def sendRGB(R, G, B):
-    if minBrightness != 0:
-        R = minBrightness + (1 - minBrightness) * R
-        B = minBrightness + (1 - minBrightness) * B
-        G = minBrightness + (1 - minBrightness) * G
-    
+def sendRGB(R, G, B):    
     R = int(R*255)
     G = int(G*255)
     B = int(B*255)
@@ -151,7 +142,7 @@ try:
    while True:
         audio, _ = stream.read(int(sampleRate * duration))
         audio = audio.flatten()
-        sendHSV(Hue.getPWM(audio), 1,brightness) # lumination and value are set constant to make it brighter.
+        sendHSV(Hue.getPWM(audio), minBrightness, brightness)
 except KeyboardInterrupt:
     stream.stop()
     stream.close()
