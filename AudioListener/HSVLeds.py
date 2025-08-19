@@ -99,7 +99,11 @@ class parser():
 
         return normalized
 
-def sendRGB(R, G, B):    
+def sendRGB(R, G, B):
+    if minBrightness != 0:
+        R = minBrightness + (1 - minBrightness) * R
+        B = minBrightness + (1 - minBrightness) * B
+        G = minBrightness + (1 - minBrightness) * G
     R = int(R*255)
     G = int(G*255)
     B = int(B*255)
@@ -142,7 +146,7 @@ try:
    while True:
         audio, _ = stream.read(int(sampleRate * duration))
         audio = audio.flatten()
-        sendHSV(Hue.getPWM(audio), minBrightness, brightness)
+        sendHSV(Hue.getPWM(audio), 1, brightness)
 except KeyboardInterrupt:
     stream.stop()
     stream.close()
