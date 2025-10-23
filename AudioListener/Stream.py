@@ -3,7 +3,7 @@ import sounddevice as sd
 import numpy as np
 import argparse
 
-arduino = serial.Serial("/dev/ttyACM0", 200000, timeout=1)
+arduino = serial.Serial("/dev/ttyACM0", 20000, timeout=1)
 
 brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # setting it too low can lead to non reactive lights. Higher brightness = more colors.
@@ -26,12 +26,18 @@ selfMax = 17000 # This should be a good amount above the max given by the normal
 # too high and it will never turn green, too low and it will always be white. I do not like green so it is quite high!
 # recalibrate when changing variables such as duration or bitrate. Not recalibrating can lead to an inactive light
 
-silence = 0.05 # how low does it need to be to be fully white? set to 0 for darkness when quiet.
+silence = -1 # how low does it need to be to be fully white? set to 0 for darkness when quiet.
+
+numLEDs = 100
 
 All = [0,20000]
 High = [4000, 20000]    #[4000, 20000]raw freq  #[6000, 20000] mostly white with jumps
 Mids = [300, 5000]      #[500, 4000]            #[650, 6500]
 Lows = [0, 550]         #[0, 500]               #[0, 1000]
+
+deadzones = [
+    #(27,70)
+]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--brightness", type=float, help="set light brightness (0-1)")
@@ -50,6 +56,8 @@ if args.low is not None:
 #    selfNormalize = False
 
 freqs = np.fft.rfftfreq(int(sampleRate*duration) * 2, 1/sampleRate)
+
+stripstream = [(0,0,0)] * numLEDs
 
 class normalizer():
     def __init__(self):
@@ -76,15 +84,13 @@ class parser():
     def __init__(self, parseType):
         self.parseType = parseType
         self.env = 0
-        self.lowenv = 0
-        self.highenv = 0
         self.normalizer = normalizer()
 
-    def freqToNote(self, freq):
-        if freq <= 0:
-            return 0
-        note = 69 + 12 * np.log2(freq/ 440.0)
-        return round(note)
+    # def freqToNote(self, freq):
+    #     if freq <= 0:
+    #         return 0
+    #     note = 69 + 12 * np.log2(freq/ 440.0)
+    #     return round(note)
 
     def getPWM(self, audio):
 # trying to change to notes rather than frequency
@@ -97,72 +103,17 @@ class parser():
         # change how much each is multiplied by to change how reactive each frequency is. relative is important! - 201/200/200 will look the same as 2.01/2/2
         # changing to be too far away from eachother, 1/0.1/1 will be flashy due to spikes in one frequency
         # I found these pleasant for the music I listen to - different music is a LOT different in what it spikes and what should be emphasised.
-        # rawL = np.sum(lowFreq) * 1.5
-        # rawM = np.sum(midFreq) * 1
-        # rawH = np.sum(highFreq) * 1.5
-        # raw = rawL + rawM + rawH
-# GPT CODE
-#        # Peak detection
-#        peak_idx = np.argmax(fft)
-#        peak_freq = freqs[peak_idx]
-#        peak_note = self.freqToNote(peak_freq)
-#        note_hue = (peak_note % 12) / 12.0 if peak_note else 0
-#
-#        # Relative balance
-#        low_val  = np.sum(lowFreq)
-#        mid_val  = np.sum(midFreq)
-#        high_val = np.sum(highFreq)
-#        low_val  = np.log1p(low_val)
-#        mid_val  = np.log1p(mid_val)
-#        high_val = np.log1p(high_val)
-#        low_val  *= 1.3
-#        mid_val  *= 0.7   # pull mids down
-#        high_val *= 1.2
-#        # Weighted hue from spectrum balance
-#        spectrum_hue = (0.0*low_val + 0.33*mid_val + 0.66*high_val) / (low_val+mid_val+high_val+1e-6)
-#
-#        total = low_val + mid_val + high_val + 1e-6
-#
-#        l = low_val / total
-#        m = mid_val / total
-#        h = high_val / total
-#
-#        # Blend spectrum hue and peak note hue
-#        hue = 0.7 * spectrum_hue + 0.3 * note_hue
-#        #hue = (l*0.0 + m*0.6 + h*0.9) % 1.0
-#
-#        # Envelope as before for brightness
-#        if raw > self.env:
-#            self.env += attack_rate * (raw - self.env)
-#        else:
-#            self.env += decay_rate  * (raw - self.env)
-#
-#        v = self.normalizer.normalize(self.env, 1)
-#        
-#        if v < silence:
-#            hue = 0.0
-#            sat = v/silence
-#            v = brightness
-#            return hue, sat, v
-#        return hue % 1.0, 1.0, v
-#ENDGPT
         rawL = np.sum(lowFreq) * 1.5
         rawM = np.sum(midFreq) * 1
         rawH = np.sum(highFreq) * 1.5
         raw = rawL + rawM + rawH
-        otherflag = 0
+        rawL = np.sum(lowFreq) * 1.5
+        rawM = np.sum(midFreq) * 1
+        rawH = np.sum(highFreq) * 1.5
+        raw = rawL + rawM + rawH
+
         if raw > self.env:
-            #print(attack_rate * (raw - self.env))
-            if attack_rate * (rawL - self.lowenv) > 600:
-                #print(raw)
-                otherflag = 1
-                #print("L", attack_rate * (rawL - self.lowenv))
-            elif attack_rate * (rawH - self.highenv) > 550:
-                otherflag = 1
-                #print("H", attack_rate * (rawH - self.highenv))
             self.env += attack_rate * (raw - self.env)
-            self.highenv += attack_rate * (rawH - self.highenv)
-            self.lowenv += attack_rate * (rawL - self.lowenv)
         else:
             self.env += decay_rate  * (raw - self.env)
 
@@ -170,9 +121,14 @@ class parser():
 
         normalized = (normalized + 0.5) % 1 # sitting at 0.5 value allows for the 0 state to be white.
 
-        return normalized, otherflag
+        return normalized
 
-def sendRGB(R, G, B, flag):
+def sendStrip(colors):
+    flat = [str(v) for rgb in colors for v in rgb]
+    data = ",".join(flat) + "\n"
+    arduino.write(data.encode())
+
+def sendRGB(R, G, B):
     if minBrightness != 0:
         R = minBrightness + (1 - minBrightness) * R
         B = minBrightness + (1 - minBrightness) * B
@@ -180,29 +136,29 @@ def sendRGB(R, G, B, flag):
     R = int(R*255)
     G = int(G*255)
     B = int(B*255)
-    data = f"{R},{G},{B},{flag}\n"
-    #print(data)
-    arduino.write(data.encode())
+    return (R, G, B)
+    #data = f"{R},{G},{B}\n"
+    #arduino.write(data.encode())
 
-def sendHSV(h, s, v, flag):
+def sendHSV(h, s, v):
     if s == 0.0:
-        return sendRGB(v, v, v, flag)
+        return sendRGB(v, v, v)
     i = int(h * 6.)
     f = (h * 6) - i
     p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
     i %= 6
     if i == 0:
-        return sendRGB(v, t, p, flag)
+        return sendRGB(v, t, p)
     if i == 1:
-        return sendRGB(q, v, p, flag)
+        return sendRGB(q, v, p)
     if i == 2:
-        return sendRGB(p, v, t, flag)
+        return sendRGB(p, v, t)
     if i == 3:
-        return sendRGB(p, q, v, flag)
+        return sendRGB(p, q, v)
     if i == 4:
-        return sendRGB(t, p, v, flag)
+        return sendRGB(t, p, v)
     if i == 5:
-        return sendRGB(v, p, q, flag)
+        return sendRGB(v, p, q)
 
 #TODO: this is bad - a mic can be an input
 stream = sd.InputStream(
@@ -220,14 +176,23 @@ try:
    while True:
         audio, _ = stream.read(int(sampleRate * duration))
         audio = audio.flatten()
-        h, flag = Hue.getPWM(audio)
-        sendHSV(h,1,brightness, flag)
+        h = Hue.getPWM(audio)
+        bright = brightness
+        if h == 0.5:
+            bright = 0
+        stripstream.insert(0, sendHSV(h,1,bright))
+        stripstream.pop()
+        for start, end in deadzones:
+            stripstream[end] = stripstream[start]
+            stripstream[start] = (0,0,0)
+        sendStrip(stripstream)
+        #print(stripstream)
 except KeyboardInterrupt:
     stream.stop()
     stream.close()
-    sendRGB(0,0,0, 0) # turn off the lights when the program stops.
+    sendRGB(0,0,0) # turn off the lights when the program stops.
 finally:
     print("\nexiting")
     stream.stop()
     stream.close()
-    sendRGB(0,0,0, 0)
+    sendRGB(0,0,0)
