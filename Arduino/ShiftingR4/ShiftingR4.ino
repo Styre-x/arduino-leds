@@ -7,7 +7,7 @@
 #define LED_PIN 4
 #define NUM_LEDS 90 // should be even
 #define LED_TYPE WS2812B
-#define COLOR_ORDER GRB
+#define COLOR_ORDER BRG
 
 typedef struct Node node;
 
@@ -36,7 +36,7 @@ list* create_list(){
     return first;
 };
 
-void add_to_list(list* ll, unsigned char* r, unsigned char* g, unsigned char* b){
+void add_to_list(list* ll, unsigned char r, unsigned char g, unsigned char b){
     node* first = (node*)malloc(sizeof(node));
     if (ll->head != NULL){
       first->next = ll->head;
@@ -49,9 +49,9 @@ void add_to_list(list* ll, unsigned char* r, unsigned char* g, unsigned char* b)
     first->g = (unsigned char*)malloc(sizeof(unsigned char));
     first->b = (unsigned char*)malloc(sizeof(unsigned char));
 
-    *first->r = *r;
-    *first->g = *g;
-    *first->b = *b;
+    *first->r = r;
+    *first->g = g;
+    *first->b = b;
 
     ll->head = first;
 };
@@ -67,8 +67,6 @@ void setup() {
   values = create_list();
 }
 
-//String input = "25,25,25\n";
-
 void loop() {
   if (Serial.available()) {
     //delay(100);
@@ -78,24 +76,27 @@ void loop() {
     int thirdcomma = input.indexOf(',', secondcomma+1);
 
     if (firstcomma > 0 && secondcomma > firstcomma){
-      unsigned char R = (unsigned char)input.substring(0, firstcomma).toInt();
-      unsigned char G = (unsigned char)input.substring(firstcomma + 1, secondcomma).toInt();
-      unsigned char B = (unsigned char)input.substring(secondcomma + 1, thirdcomma).toInt();
+      int R = input.substring(0, firstcomma).toInt();
+      int G = input.substring(firstcomma + 1, secondcomma).toInt();
+      int B = input.substring(secondcomma + 1, thirdcomma).toInt();
 
-      unsigned char flag = (unsigned char)input.substring(thirdcomma+1).toInt();
+      int flag = input.substring(thirdcomma+1).toInt();
 
       analogWrite(redpin, R);
       analogWrite(greenpin, G);
       analogWrite(bluepin, B);
 
       if (flag == 1){
-        add_to_list(values, (unsigned char*)R, (unsigned char*)G, (unsigned char*)B);
+        add_to_list(values, (unsigned char)R, (unsigned char)G, (unsigned char)B);
       }else{
         add_to_list(values, 0, 0, 0);
       }
       
       if (length == NUM_LEDS/4 + 1){
         node* newlast = last->last;
+        free(last->r);
+        free(last->g);
+        free(last->b);
         free(last);
         last = newlast;
         last->next = NULL;
@@ -109,25 +110,13 @@ void loop() {
       current = last;
       int i = 0;
       while (current != NULL && i < NUM_LEDS/2){
-        // to make it change from the center, looks cool
-        //leds[(NUM_LEDS/2) - i].setRGB(current->g, current->r, current->b);
-        //leds[(NUM_LEDS/2) + i-1].setRGB(current->g, current->r, current->b);
         leds[i].setRGB(*current->r, *current->g, *current->b);
         leds[NUM_LEDS - i-1].setRGB(*current->r, *current->g, *current->b);
         i++;
-        // leds[i].setRGB(current->r, current->g, current->b);
-        // leds[NUM_LEDS - i-1].setRGB(current->r, current->g, current->b);
-        // i++;
         if (i%2 == 0){
           current = current->last;
         }
       }
-      // if (i < NUM_LEDS/2){
-      //   for (i = i; i < NUM_LEDS/2; i++){
-      //     leds[i].setRGB(values->head->r, values->head->g, values->head->b);
-      //     leds[NUM_LEDS - i-1].setRGB(values->head->r, values->head->g, values->head->b);
-      //   }
-      // }
     }
 
     FastLED.show();

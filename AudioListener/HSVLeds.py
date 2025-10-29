@@ -3,14 +3,16 @@ import sounddevice as sd
 import numpy as np
 import argparse
 
-arduino = serial.Serial("/dev/ttyACM0", 200000, timeout=1)
+arduino = serial.Serial("/dev/ttyACM1", 200000, timeout=1)
 
 brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # setting it too low can lead to non reactive lights. Higher brightness = more colors.
 minBrightness = 0
 
 attack_rate = 1    # how quickly it jumps up 0-1
-decay_rate  = 0.9   # how slowly it falls back 1-0
+decay_rate  = 1.2   # how slowly it falls back 1-0
+
+resting = 0.18 # resting color H in HSV. 0-1
 
 sampleRate = 44100 #bitrate for the sample. 
 duration = 0.025 # seconds to sample from - lower = quick response/higher = smoother response
@@ -19,7 +21,7 @@ duration = 0.025 # seconds to sample from - lower = quick response/higher = smoo
 # Values below 0.025 lead to heavy flashing due to little time to average over, but have fun :)
 # changing this with selfNormalized set to False will require a re-normalize
 
-selfNormalize = False # Should it adapt to your music?
+selfNormalize = True # Should it adapt to your music?
 # Set to true and it will automatically set the max for your music.
 # I did not like the reset after a restart so I added this.
 selfMax = 17000 # This should be a good amount above the max given by the normalizer through print(self.max) in input > self.max
@@ -33,10 +35,13 @@ High = [4000, 20000]    #[4000, 20000]raw freq  #[6000, 20000] mostly white with
 Mids = [300, 5000]      #[500, 4000]            #[650, 6500]
 Lows = [0, 550]         #[0, 500]               #[0, 1000]
 
+rgbMax = [255,255,255]
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--brightness", type=float, help="set light brightness (0-1)")
 parser.add_argument("-l", "--low", type=float, help="set min brightness (0-1) - relative to brightness: 0.5 will be 0.1 with a brightness of 0.2")
 parser.add_argument("-n", "--normal", help="set self-normalization to false", action="store_true")
+parser.add_argument("-rgb", "--rgb", type=str, help="set rgb max to given tuple r,g,b. Range 0-255")
 
 args = parser.parse_args()
 
@@ -46,10 +51,19 @@ if args.brightness is not None:
 if args.low is not None:
     minBrightness = args.low * brightness
 
+if args.rgb is not None:
+    rgbMax = list(map(int, args.rgb.split(",")))
+
 #if args.normal:
 #    selfNormalize = False
 
 freqs = np.fft.rfftfreq(int(sampleRate*duration) * 2, 1/sampleRate)
+
+def downsample(arr, target_size, mulval):
+    # Trim array to make it evenly divisible
+    trim_size = (len(arr) // target_size) * target_size
+    trimmed = np.array([item * mulval for item in arr[:trim_size]])
+    return list(map(int, np.clip(trimmed.reshape(target_size, -1).mean(axis=1), 0, 256)))
 
 class normalizer():
     def __init__(self):
@@ -78,6 +92,7 @@ class parser():
         self.env = 0
         self.lowenv = 0
         self.highenv = 0
+        self.rotator = 0.18
         self.normalizer = normalizer()
 
     def freqToNote(self, freq):
@@ -92,6 +107,14 @@ class parser():
         lowFreq = fft[(freqs >= Lows[0]) & (freqs <= Lows[1])]
         midFreq = fft[(freqs >= Mids[0]) & (freqs <= Mids[1])]
         highFreq = fft[(freqs >= High[0]) & (freqs <= High[1])]
+
+        # 28, 235, 800 different frequency items in the list
+        # Uncomment for visualizer (bad)
+        # visualLow = downsample(lowFreq, 6, 2)
+        # visualMid = downsample(midFreq, 8, 6)
+        # visualHigh = downsample(highFreq, 6, 10)
+        # otherflag = " ".join(map(str, visualLow)) + " ".join(map(str, visualMid)) + " ".join(map(str, visualHigh)) # was 0 to support flagging for the addressable strip
+        #print(visualLow, visualMid, visualHigh)
         
         # basically, it takes all frequencies and averages - terrible signal processing - it only reacts to volume changes.
         # change how much each is multiplied by to change how reactive each frequency is. relative is important! - 201/200/200 will look the same as 2.01/2/2
@@ -101,65 +124,17 @@ class parser():
         # rawM = np.sum(midFreq) * 1
         # rawH = np.sum(highFreq) * 1.5
         # raw = rawL + rawM + rawH
-# GPT CODE
-#        # Peak detection
-#        peak_idx = np.argmax(fft)
-#        peak_freq = freqs[peak_idx]
-#        peak_note = self.freqToNote(peak_freq)
-#        note_hue = (peak_note % 12) / 12.0 if peak_note else 0
-#
-#        # Relative balance
-#        low_val  = np.sum(lowFreq)
-#        mid_val  = np.sum(midFreq)
-#        high_val = np.sum(highFreq)
-#        low_val  = np.log1p(low_val)
-#        mid_val  = np.log1p(mid_val)
-#        high_val = np.log1p(high_val)
-#        low_val  *= 1.3
-#        mid_val  *= 0.7   # pull mids down
-#        high_val *= 1.2
-#        # Weighted hue from spectrum balance
-#        spectrum_hue = (0.0*low_val + 0.33*mid_val + 0.66*high_val) / (low_val+mid_val+high_val+1e-6)
-#
-#        total = low_val + mid_val + high_val + 1e-6
-#
-#        l = low_val / total
-#        m = mid_val / total
-#        h = high_val / total
-#
-#        # Blend spectrum hue and peak note hue
-#        hue = 0.7 * spectrum_hue + 0.3 * note_hue
-#        #hue = (l*0.0 + m*0.6 + h*0.9) % 1.0
-#
-#        # Envelope as before for brightness
-#        if raw > self.env:
-#            self.env += attack_rate * (raw - self.env)
-#        else:
-#            self.env += decay_rate  * (raw - self.env)
-#
-#        v = self.normalizer.normalize(self.env, 1)
-#        
-#        if v < silence:
-#            hue = 0.0
-#            sat = v/silence
-#            v = brightness
-#            return hue, sat, v
-#        return hue % 1.0, 1.0, v
-#ENDGPT
+
         rawL = np.sum(lowFreq) * 1.5
         rawM = np.sum(midFreq) * 1
         rawH = np.sum(highFreq) * 1.5
         raw = rawL + rawM + rawH
-        otherflag = 0
+        otherflag = 1
         if raw > self.env:
-            #print(attack_rate * (raw - self.env))
             if attack_rate * (rawL - self.lowenv) > 600:
-                #print(raw)
                 otherflag = 1
-                #print("L", attack_rate * (rawL - self.lowenv))
             elif attack_rate * (rawH - self.highenv) > 550:
                 otherflag = 1
-                #print("H", attack_rate * (rawH - self.highenv))
             self.env += attack_rate * (raw - self.env)
             self.highenv += attack_rate * (rawH - self.highenv)
             self.lowenv += attack_rate * (rawL - self.lowenv)
@@ -168,7 +143,14 @@ class parser():
 
         normalized = self.normalizer.normalize(self.env, 1)
 
-        normalized = (normalized + 0.5) % 1 # sitting at 0.5 value allows for the 0 state to be white.
+        normalized = (normalized + self.rotator) % 1 # sitting at 0.5 value allows for the 0 state to be white.
+#        if normalized < 0.0001:
+#            normalized = resting
+        
+        # rotate the HSV wheel to make it more interesting.
+        self.rotator += 0.001
+        if self.rotator >= 1:
+            self.rotator = 0
 
         return normalized, otherflag
 
@@ -177,11 +159,19 @@ def sendRGB(R, G, B, flag):
         R = minBrightness + (1 - minBrightness) * R
         B = minBrightness + (1 - minBrightness) * B
         G = minBrightness + (1 - minBrightness) * G
-    R = int(R*255)
-    G = int(G*255)
-    B = int(B*255)
+    if rgbMax[0] == 0:
+        G = (G+R)/2
+        B = (B+R)/2
+    if rgbMax[1] == 0:
+        R = (R+G)/2
+        B = (B+G)/2
+    if rgbMax[2] == 0:
+        R = (R+B)/2
+        G = (G+B)/2
+    R = int(R*rgbMax[0])
+    G = int(G*rgbMax[1])
+    B = int(B*rgbMax[2])
     data = f"{R},{G},{B},{flag}\n"
-    #print(data)
     arduino.write(data.encode())
 
 def sendHSV(h, s, v, flag):
@@ -225,7 +215,8 @@ try:
 except KeyboardInterrupt:
     stream.stop()
     stream.close()
-    sendRGB(0,0,0, 0) # turn off the lights when the program stops.
+    for i in range(250): # turn off the lights when the program stops.
+        sendRGB(0,0,0, 0)
 finally:
     print("\nexiting")
     stream.stop()
