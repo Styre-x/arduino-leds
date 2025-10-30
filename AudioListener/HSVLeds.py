@@ -2,8 +2,7 @@ import serial
 import sounddevice as sd
 import numpy as np
 import argparse
-
-arduino = serial.Serial("/dev/ttyACM1", 200000, timeout=1)
+import sys
 
 brightness = 1 # float 0-1 for percent brightness of the LEDs. Not linear when changed, different setups have differentlower ranges.
 # setting it too low can lead to non reactive lights. Higher brightness = more colors.
@@ -42,8 +41,11 @@ parser.add_argument("-b", "--brightness", type=float, help="set light brightness
 parser.add_argument("-l", "--low", type=float, help="set min brightness (0-1) - relative to brightness: 0.5 will be 0.1 with a brightness of 0.2")
 parser.add_argument("-n", "--normal", help="set self-normalization to false", action="store_true")
 parser.add_argument("-rgb", "--rgb", type=str, help="set rgb max to given tuple r,g,b. Range 0-255")
+parser.add_argument("arduino", type=str)
 
 args = parser.parse_args()
+
+arduino = serial.Serial(args.arduino, 200000, timeout=1)
 
 if args.brightness is not None:
     brightness = args.brightness
