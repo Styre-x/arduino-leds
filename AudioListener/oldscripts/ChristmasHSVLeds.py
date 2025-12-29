@@ -94,7 +94,7 @@ class parser():
         self.env = 0
         self.lowenv = 0
         self.highenv = 0
-        self.rotator = 0.18
+        self.rotator = 0.5
         self.normalizer = normalizer()
 
     def freqToNote(self, freq):
@@ -104,31 +104,13 @@ class parser():
         return round(note)
 
     def getPWM(self, audio):
-# trying to change to notes rather than frequency
         fft = np.abs(np.fft.rfft(audio))
         lowFreq = fft[(freqs >= Lows[0]) & (freqs <= Lows[1])]
         midFreq = fft[(freqs >= Mids[0]) & (freqs <= Mids[1])]
         highFreq = fft[(freqs >= High[0]) & (freqs <= High[1])]
 
-        # 28, 235, 800 different frequency items in the list
-        # Uncomment for visualizer (bad)
-        # visualLow = downsample(lowFreq, 6, 2)
-        # visualMid = downsample(midFreq, 8, 6)
-        # visualHigh = downsample(highFreq, 6, 10)
-        # otherflag = " ".join(map(str, visualLow)) + " ".join(map(str, visualMid)) + " ".join(map(str, visualHigh)) # was 0 to support flagging for the addressable strip
-        #print(visualLow, visualMid, visualHigh)
-        
-        # basically, it takes all frequencies and averages - terrible signal processing - it only reacts to volume changes.
-        # change how much each is multiplied by to change how reactive each frequency is. relative is important! - 201/200/200 will look the same as 2.01/2/2
-        # changing to be too far away from eachother, 1/0.1/1 will be flashy due to spikes in one frequency
-        # I found these pleasant for the music I listen to - different music is a LOT different in what it spikes and what should be emphasised.
-        # rawL = np.sum(lowFreq) * 1.5
-        # rawM = np.sum(midFreq) * 1
-        # rawH = np.sum(highFreq) * 1.5
-        # raw = rawL + rawM + rawH
-
-        rawL = np.sum(lowFreq) * 1.5
-        rawM = np.sum(midFreq) * 1
+        rawL = np.sum(lowFreq) * 3
+        rawM = np.sum(midFreq) * 2
         rawH = np.sum(highFreq) * 1.5
         raw = rawL + rawM + rawH
         otherflag = 1
@@ -146,11 +128,9 @@ class parser():
         normalized = self.normalizer.normalize(self.env, 1)
 
         normalized = (normalized + self.rotator) % 1 # sitting at 0.5 value allows for the 0 state to be white.
-#        if normalized < 0.0001:
-#            normalized = resting
         
         # rotate the HSV wheel to make it more interesting.
-        self.rotator += 0.001
+        #self.rotator += 0.001
         if self.rotator >= 1:
             self.rotator = 0
 
@@ -173,6 +153,16 @@ def sendRGB(R, G, B, flag):
     R = int(R*rgbMax[0])
     G = int(G*rgbMax[1])
     B = int(B*rgbMax[2])
+    brightness = max(R, G, B)
+    # Decide red or green based on original color
+    if R > G and R > B:
+        R = 255
+        G = 0
+        B = 0
+    else:
+        G = (R+B+G)/3
+        R = 0
+        B = 0
     data = f"{R},{G},{B},{flag}\n"
     arduino.write(data.encode())
 
@@ -196,7 +186,7 @@ def sendHSV(h, s, v, flag):
     if i == 5:
         return sendRGB(v, p, q, flag)
 
-#TODO: this is bad - a mic can be an input
+#TODO: this is bad - a mic can (AND WILL BE) be an input. Redone in C for better control.
 stream = sd.InputStream(
     channels=2,
     samplerate=sampleRate,
