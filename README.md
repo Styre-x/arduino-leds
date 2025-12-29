@@ -17,7 +17,8 @@ Python will listen to a microphone if one is plugged into the system. Changing t
 sounddevice numpy pyserial
 
 # Hardware:
-Using an arduino uno plugged into my desktop, I set up a circuit using the diagram in Circuit.pdf. Use a breadboard or similar to wire it up and it works :)
+Using an arduino uno plugged into my desktop, I set up a circuit using the diagram in Circuit.pdf. Use a breadboard or similar to wire it up and it works :)\
+Can also use addressable LEDs on pin 4. I much prefer the addressable LEDs.
 ## NOTE ##
 Green pin is **11** not **8**.\
 Make sure the ground is common but 12/24V are NOT being sent to the Arduino! Sending more than 5 will fry the poor thing. 
